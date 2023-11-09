@@ -20,7 +20,7 @@ class CityGrid(models.Model):
     rows = models.PositiveIntegerField('Количество строк в сетке')
     columns = models.PositiveIntegerField('Количество столбцов в сетке')
     coverage_threshold = models.PositiveIntegerField(
-        'Минимальный порог покрытия в процентах', default=30
+        'Минимальный % покрытия', default=30
     )
 
     def save(self, *args, **kwargs):
@@ -28,7 +28,7 @@ class CityGrid(models.Model):
 
         for row in range(1, self.rows + 1):
             for column in range(1, self.columns + 1):
-                if random.randint(1, 100) > self.coverage_threshold:
+                if random.randint(1, 100) < self.coverage_threshold:
                     BlockedBlock.objects.create(
                         city_grid=self, row=row, column=column
                     )
