@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.contrib.auth.models import Group
 
-from .models import CityGrid, BlockedBlock
+from .models import CityGrid, Block
 
 admin.site.unregister(Group)
 
@@ -14,10 +14,11 @@ class CityGridAdmin(admin.ModelAdmin):
     save_on_top = True
 
 
-@admin.register(BlockedBlock)
+@admin.register(Block)
 class BlockedBlockAdmin(admin.ModelAdmin):
-    list_display = ['row', 'column']
+    list_display = ['row', 'column', 'blocked']
     list_display_links = list_display
+    list_filter = ('blocked',)
     search_fields = ['city_grid']
     save_on_top = True
 
