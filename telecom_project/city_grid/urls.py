@@ -1,8 +1,6 @@
 from django.urls import path
-from .views import visualize_tower_coverage
+from .views import visualize_city_grid
 
 urlpatterns = [
-    # path('visualize/<int:city_grid_id>/', visualize_tower_coverage, name='visualize_tower_coverage'),
-    # path('block-visualization/', BlockVisualization.as_view(), name='block-visualization'),
-    path('visualize_coverage/<int:tower_pk>/', visualize_tower_coverage, name='visualize_tower_coverage'),
+    path('visualize_city_grid/<int:city_grid_pk>/', visualize_city_grid, name='visualize_city_grid'),
 ]

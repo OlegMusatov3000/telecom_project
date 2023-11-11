@@ -1,41 +1,50 @@
 from django.contrib import admin
 from django.contrib.auth.models import Group
+from django.urls import resolve
 
-from .models import CityGrid, Block, Tower, TowerCoverage, BlockTowerCoverage, Visualization
+from .models import CityGrid, Block, Tower, TowerCoverage
 
 admin.site.unregister(Group)
 admin.site.register(Tower)
 
 
-@admin.register(Visualization)
-class VisualizationAdmin(admin.ModelAdmin):
-    list_display = ['id']
-    list_display_links = list_display
-    search_fields = ['id']
-    save_on_top = True
-
-    def has_add_permission(self, request):
-        return False
-
-
-class BlockTowerCoverageInLine(admin.StackedInline):
-    model = BlockTowerCoverage
+class TowerCoverageInLine(admin.StackedInline):
+    model = TowerCoverage
     extra = 0
+
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        if db_field.name == 'block_for_tower':
+            object_id = resolve(request.path_info).kwargs.get('object_id')
+
+            kwargs['queryset'] = Block.objects.filter(
+                blocked=False, city_grid_id=object_id
+            )
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
 
 
 @admin.register(CityGrid)
 class CityGridAdmin(admin.ModelAdmin):
-    list_display = ['id', 'rows', 'columns', 'coverage_threshold']
+    list_display = [
+        'id', 'rows', 'columns', 'coverage_threshold', 'show_visualization'
+    ]
     list_display_links = list_display
     search_fields = ['coverage_threshold']
     save_on_top = True
+    CityGrid.show_visualization.short_description = 'Визуализация'
+
+    def get_inlines(self, request, obj=None):
+        if obj:
+            return [TowerCoverageInLine]
+        return []
 
 
 @admin.register(Block)
 class BlockedBlockAdmin(admin.ModelAdmin):
-    list_display = ['row', 'column', 'blocked']
+    list_display = [
+        'row', 'column', 'blocked', 'towers_blocked', 'covered_with_a_tower'
+    ]
     list_display_links = list_display
-    list_filter = ('blocked',)
+    list_filter = ('blocked', 'towers_blocked', 'covered_with_a_tower')
     search_fields = ['city_grid']
     save_on_top = True
 
@@ -43,6 +52,6 @@ class BlockedBlockAdmin(admin.ModelAdmin):
         return False
 
 
-@admin.register(TowerCoverage)
-class TowerCoverageAdmin(admin.ModelAdmin):
-    inlines = (BlockTowerCoverageInLine,)
+# @admin.register(TowerCoverage)
+# class TowerCoverageAdmin(admin.ModelAdmin):
+#     inlines = (BlockTowerCoverageInLine,)

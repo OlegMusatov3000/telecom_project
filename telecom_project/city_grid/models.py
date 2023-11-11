@@ -1,39 +1,27 @@
 import random
-from math import sqrt
 
-from django_matplotlib import MatplotlibFigureField
+from django.core.exceptions import ValidationError
+from django.core.validators import MinValueValidator
 from django.db import models
-# try:
-import matplotlib.pyplot as plt
-import matplotlib
-# except ImportError:
-#     plt = None
+from django.utils.safestring import mark_safe
+from django.urls import reverse
 
-
-class Visualization(models.Model):
-    city_grid = models.ForeignKey(
-        'CityGrid', verbose_name='Визуализировано для:',
-        on_delete=models.CASCADE
-    )
-    figure = MatplotlibFigureField(figure='my_figure',)
-
-    class Meta:
-        verbose_name = verbose_name_plural = 'Визуализация'
-
-    def __str__(self):
-        return f'Визуализация для объекта: {self.city_grid}, {self.figure}'
+from .utils import insert_and_return_coordinates
 
 
 class Block(models.Model):
-    city_grid = models.ForeignKey('CityGrid', on_delete=models.CASCADE)
+    city_grid = models.ForeignKey('CityGrid', on_delete=models.CASCADE, related_name='blocks')
     row = models.PositiveIntegerField('строка в сетке')
     column = models.PositiveIntegerField('столбец в сетке')
     blocked = models.BooleanField(
         'Заблокированный блок?', default=False
     )
-    # towers_blocked = models.BooleanField(
-    #     'Занят вышкой?', default=False
-    # )
+    towers_blocked = models.BooleanField(
+        'Занят вышкой?', default=False
+    )
+    covered_with_a_tower = models.BooleanField(
+        'покрыт вышкой?', default=False
+    )
 
     class Meta:
         verbose_name = 'Блок'
@@ -44,77 +32,39 @@ class Block(models.Model):
 
 
 class CityGrid(models.Model):
-    rows = models.PositiveIntegerField('Количество строк в сетке')
-    columns = models.PositiveIntegerField('Количество столбцов в сетке')
+    rows = models.IntegerField(
+        'кол-во строк в сетке',
+        validators=[MinValueValidator(1, 'Значение не может быть меньше 1')]
+    )
+    columns = models.IntegerField(
+        'кол-во столбцов в сетке',
+        validators=[MinValueValidator(1, 'Значение не может быть меньше 1')]
+    )
     coverage_threshold = models.PositiveIntegerField(
-        'Максимальный % покрытия', default=30
-    )
-    towers = models.ManyToManyField(
-        'Tower', related_name='city_grids', blank=True)
-    visualize = models.BooleanField(
-        'Визуализировать объект?', default=False
+        'Максимальный % покрытия', default=30,
+        help_text='''
+        Пожалуйста укажите максимальный процент загороженности вашей сетки
+        '''
     )
 
-    def my_figure(self):
-        import matplotlib.pyplot as plt
-        from matplotlib.lines import Line2D
-        from matplotlib.patches import Rectangle
-        from city_grid.models import Block
-        blocks = Block.objects.filter(city_grid=self)
-
-        if plt:
-            matplotlib.use('Agg')
-        # Создаем фигуру и оси
-        fig, ax = plt.subplots()
-
-        # Перебираем блоки и рисуем квадрат для каждого из них
-        for block in blocks:
-            color = 'red' if block.blocked else 'green'
-            ax.add_patch(Rectangle((block.column, block.row), 1, 1, color=color))
-
-        # Настраиваем оси и метки
-        ax.set_xlim(0, max([block.column for block in blocks]) + 1)
-        ax.set_ylim(0, max([block.row for block in blocks]) + 1)
-        ax.set_aspect('equal', adjustable='box')
-        ax.set_xlabel('Столбец в сетке')
-        ax.set_ylabel('Строка в сетке')
-
-        legend_elements = [
-            Line2D([0], [0], marker='s', color='w', markerfacecolor='red', markersize=10, label='Застроенный блок'),
-            Line2D([0], [0], marker='s', color='w', markerfacecolor='green', markersize=10, label='Свободный блок'),
-            Line2D([0], [0], marker='s', color='w', markerfacecolor='blue', markersize=10, label='Расположение вышки'),
-        ]
-
-        # Добавляем легенду с bbox_to_anchor
-        ax.legend(handles=legend_elements, loc='upper right', bbox_to_anchor=(0.0, 0.0))
-
-        return fig
+    def show_visualization(self):
+        return mark_safe(f'<a href="{reverse("visualize_city_grid", args=[self.pk])}" target="_blank">Показать визуализацию</a>')
 
     def save(self, *args, **kwargs):
-        super(CityGrid, self).save(*args, **kwargs)
-
-        for row in range(1, self.rows + 1):
-            for column in range(1, self.columns + 1):
-                if random.randint(1, 100) < self.coverage_threshold:
-                    Block.objects.create(
-                        city_grid=self, row=row, column=column, blocked=True
-                    )
-                else:
-                    Block.objects.create(
-                        city_grid=self, row=row, column=column
-                    )
-        self.my_figure()
-        # if self.visualize:
-        #     Visualization.objects.create(
-        #         city_grid=self,
-        #         figure=MatplotlibFigureField(
-        #             figure='my_figure',
-        #             plt_args=(self),
-        #             fig_width=800,
-        #             fig_height=600,
-        #             output_type='file'
-        #         )
-        #     )
+        if not self.pk:
+            super(CityGrid, self).save(*args, **kwargs)
+            for row in range(1, self.rows + 1):
+                for column in range(1, self.columns + 1):
+                    if random.randint(1, 100) < self.coverage_threshold:
+                        Block.objects.create(
+                            city_grid=self, row=row, column=column, blocked=True
+                        )
+                    else:
+                        Block.objects.create(
+                            city_grid=self, row=row, column=column
+                        )
+        else:
+            super(CityGrid, self).save(*args, **kwargs)
 
     class Meta:
         verbose_name = 'Городская сетка'
@@ -125,43 +75,76 @@ class CityGrid(models.Model):
 
 
 class Tower(models.Model):
-    radius = models.PositiveIntegerField()
+    radius = models.PositiveIntegerField(
+        'Радиус вышки',
+        help_text='Пожалуйста укажите какой радиус охватывает эта вышка'
+    )
+
+    class Meta:
+        verbose_name = 'Вышка'
+        verbose_name_plural = 'Вышки'
+
+    def __str__(self):
+        return f'Вышка № {self.id} с радиусом {self.radius}'
 
 
 class TowerCoverage(models.Model):
-    tower = models.ForeignKey(Tower, on_delete=models.CASCADE)
+    tower = models.ForeignKey(
+        Tower, verbose_name='Выберите вышку', on_delete=models.CASCADE
+    )
     city_grid = models.ForeignKey(CityGrid, on_delete=models.CASCADE)
-    covered_blocks = models.ManyToManyField(Block, through='BlockTowerCoverage', blank=True)
-    center_row = models.PositiveIntegerField()
-    center_column = models.PositiveIntegerField()
+    covered_blocks = models.ManyToManyField(
+        Block, through='BlockTowerCoverage', blank=True
+    )
+    block_for_tower = models.ForeignKey(
+        Block, verbose_name='Выберите блок для установки вышки',
+        on_delete=models.CASCADE,
+        related_name='block_for_tower',
+        help_text='''
+        Пожалуйста выберите блок для установки вышки из списка свободных блоков
+        '''
+    )
 
     def calculate_coverage(self):
-        tower = self.tower
-        radius = tower.radius
-        center_row = self.center_row
-        center_column = self.center_column
-        covered_blocks = []
+        center_coordinates = (
+            self.block_for_tower.column, self.block_for_tower.row
+        )
+        if self.covered_blocks.count() != 0:
+            for block in self.covered_blocks.get_queryset():
+                block.covered_with_a_tower = block.towers_blocked = False
+                block.save(
+                    update_fields=['covered_with_a_tower', 'towers_blocked']
+                )
+            self.covered_blocks.clear()
 
-        for block in Block.objects.filter(city_grid=self.city_grid):
-            row_distance = abs(center_row - block.row)
-            col_distance = abs(center_column - block.column)
+        self.block_for_tower.towers_blocked = True
+        self.block_for_tower.save(update_fields=['towers_blocked'])
 
-            distance = sqrt(row_distance ** 2 + col_distance ** 2)
-
-            if distance <= radius:
-                block.towers_blocked = True
-
-        for block in covered_blocks:
+        xy_coordinates = insert_and_return_coordinates(
+            self.city_grid.columns, self.city_grid.rows,
+            center_coordinates, self.tower.radius
+        )
+        blocks = Block.objects.filter(
+            column__in=[coord[0] for coord in xy_coordinates],
+            row__in=[coord[1] for coord in xy_coordinates]
+        )
+        for block in blocks:
             self.covered_blocks.add(block)
+            block.covered_with_a_tower = True
+            block.save(update_fields=['covered_with_a_tower'])
 
     def save(self, *args, **kwargs):
         super(TowerCoverage, self).save(*args, **kwargs)
         self.calculate_coverage()
 
+    class Meta:
+        verbose_name = 'Размещение вышки'
+        verbose_name_plural = 'Размещение вышек'
+
+    def __str__(self):
+        return f'Вышка № {self.id} с радиусом {self.tower.radius}'
+
 
 class BlockTowerCoverage(models.Model):
     towercoverage = models.ForeignKey(TowerCoverage, on_delete=models.CASCADE)
     block = models.ForeignKey(Block, on_delete=models.CASCADE)
-
-
-
