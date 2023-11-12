@@ -5,20 +5,23 @@ from matplotlib.lines import Line2D
 from matplotlib.patches import Rectangle
 import matplotlib
 
-from .models import Block
+from .models import Block, CityGrid
 
 
 def visualize_city_grid(request, city_grid_pk):
     try:
-        blocks = Block.objects.filter(city_grid=city_grid_pk)
-    except (Block.DoesNotExist):
-        return HttpResponse("Tower or coverage not found")
+        CityGrid.objects.get(id=city_grid_pk)
+    except (CityGrid.DoesNotExist):
+        return HttpResponse("CityGrid not found")
     if plt:
         matplotlib.use('Agg')
     fig, ax = plt.subplots(dpi=300)
 
+    blocks = Block.objects.filter(city_grid=city_grid_pk)
     for block in blocks:
-        if block.blocked:
+        if block.blocked and block.covered_with_a_tower:
+            color = 'orange'
+        elif block.blocked:
             color = 'red'
         elif block.towers_blocked:
             color = 'yellow'
@@ -39,6 +42,7 @@ def visualize_city_grid(request, city_grid_pk):
         Line2D([0], [0], marker='s', color='w', markerfacecolor='green', markersize=10, label='Свободный блок'),
         Line2D([0], [0], marker='s', color='w', markerfacecolor='yellow', markersize=10, label='Расположение вышки'),
         Line2D([0], [0], marker='s', color='w', markerfacecolor='blue', markersize=10, label='Покрытая зона вышкой'),
+        Line2D([0], [0], marker='s', color='w', markerfacecolor='orange', markersize=10, label='Застроенный блок,\nпокрытый вышкой')
     ]
 
     ax.legend(handles=legend_elements, loc='upper right', bbox_to_anchor=(0.344, 0.6), bbox_transform=plt.gcf().transFigure)

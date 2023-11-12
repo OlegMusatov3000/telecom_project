@@ -50,8 +50,3 @@ class BlockedBlockAdmin(admin.ModelAdmin):
 
     def has_add_permission(self, request):
         return False
-
-
-# @admin.register(TowerCoverage)
-# class TowerCoverageAdmin(admin.ModelAdmin):
-#     inlines = (BlockTowerCoverageInLine,)

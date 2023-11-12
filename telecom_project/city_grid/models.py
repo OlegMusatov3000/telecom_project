@@ -1,6 +1,5 @@
 import random
 
-from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
 from django.db import models
 from django.utils.safestring import mark_safe
@@ -121,7 +120,7 @@ class TowerCoverage(models.Model):
         self.block_for_tower.save(update_fields=['towers_blocked'])
 
         xy_coordinates = insert_and_return_coordinates(
-            self.city_grid.columns, self.city_grid.rows,
+            # self.city_grid.columns, self.city_grid.rows,
             center_coordinates, self.tower.radius
         )
         blocks = Block.objects.filter(
