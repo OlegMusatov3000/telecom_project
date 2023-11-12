@@ -9,7 +9,9 @@ from .utils import insert_and_return_coordinates
 
 
 class Block(models.Model):
-    city_grid = models.ForeignKey('CityGrid', on_delete=models.CASCADE, related_name='blocks')
+    city_grid = models.ForeignKey(
+        'CityGrid', on_delete=models.CASCADE, related_name='blocks'
+    )
     row = models.PositiveIntegerField('строка в сетке')
     column = models.PositiveIntegerField('столбец в сетке')
     blocked = models.BooleanField(
@@ -25,9 +27,24 @@ class Block(models.Model):
     class Meta:
         verbose_name = 'Блок'
         verbose_name_plural = 'Блоки'
+        ordering = ('row', 'column')
 
     def __str__(self):
         return f'Блок c координатами: {self.row}, {self.column}'
+
+
+class Tower(models.Model):
+    radius = models.PositiveIntegerField(
+        'Радиус вышки',
+        help_text='Пожалуйста укажите какой радиус охватывает эта вышка'
+    )
+
+    class Meta:
+        verbose_name = 'Вышка'
+        verbose_name_plural = 'Вышки'
+
+    def __str__(self):
+        return f'Вышка № {self.id} с радиусом {self.radius}'
 
 
 class CityGrid(models.Model):
@@ -45,6 +62,55 @@ class CityGrid(models.Model):
         Пожалуйста укажите максимальный процент загороженности вашей сетки
         '''
     )
+    towers = models.ManyToManyField(
+        Tower, verbose_name='Вышки которые были размещены на этой сетке',
+        blank=True,
+    )
+    auto_place_towers = models.BooleanField(
+        'Автоматическая расстановка вышек', default=False,
+        help_text='Установите флажок, если хотите, чтобы вышки расставлялись автоматически.'
+    )
+
+    def optimize_tower_placement(self):
+        """
+        Размещение минимального количества вышек так, чтобы все не загороженные блоки
+        находились в пределах действия хотя бы одной вышки.
+        """
+        free_blocks = Block.objects.filter(
+            city_grid=self, blocked=False, towers_blocked=False,
+            covered_with_a_tower=False
+        )
+
+        while free_blocks.exists():
+            target_block = free_blocks.annotate(
+                num_uncovered_neighbors=models.Count(
+                    'city_grid__blocks',
+                    ilter=models.Q(
+                        blocked=False, towers_blocked=False,
+                        covered_with_a_tower=False
+                    )
+                )
+            ).order_by('-num_uncovered_neighbors').first()
+
+            if target_block is None:
+                break
+
+            selected_tower = Tower.objects.annotate(
+                ratio=models.F('radius') / models.Value(
+                    1, output_field=models.FloatField()
+                ),
+            ).filter(ratio__isnull=False).order_by('-ratio').first()
+            if selected_tower:
+                tower_coverage = TowerCoverage.objects.create(
+                    tower=selected_tower,
+                    city_grid=self,
+                    block_for_tower=target_block
+                )
+
+                tower_coverage.calculate_coverage()
+                free_blocks = Block.objects.filter(
+                    city_grid=self, blocked=False, covered_with_a_tower=False
+                )
 
     def show_visualization(self):
         return mark_safe(f'<a href="{reverse("visualize_city_grid", args=[self.pk])}" target="_blank">Показать визуализацию</a>')
@@ -62,8 +128,10 @@ class CityGrid(models.Model):
                         Block.objects.create(
                             city_grid=self, row=row, column=column
                         )
+            if self.auto_place_towers:
+                return self.optimize_tower_placement()
         else:
-            super(CityGrid, self).save(*args, **kwargs)
+            return super(CityGrid, self).save(*args, **kwargs)
 
     class Meta:
         verbose_name = 'Городская сетка'
@@ -71,20 +139,6 @@ class CityGrid(models.Model):
 
     def __str__(self):
         return f'Городкая сетка №{self.id}'
-
-
-class Tower(models.Model):
-    radius = models.PositiveIntegerField(
-        'Радиус вышки',
-        help_text='Пожалуйста укажите какой радиус охватывает эта вышка'
-    )
-
-    class Meta:
-        verbose_name = 'Вышка'
-        verbose_name_plural = 'Вышки'
-
-    def __str__(self):
-        return f'Вышка № {self.id} с радиусом {self.radius}'
 
 
 class TowerCoverage(models.Model):
@@ -108,6 +162,7 @@ class TowerCoverage(models.Model):
         center_coordinates = (
             self.block_for_tower.column, self.block_for_tower.row
         )
+        self.city_grid.towers.add(self.tower)
         if self.covered_blocks.count() != 0:
             for block in self.covered_blocks.get_queryset():
                 block.covered_with_a_tower = block.towers_blocked = False
@@ -119,13 +174,8 @@ class TowerCoverage(models.Model):
         self.block_for_tower.towers_blocked = True
         self.block_for_tower.save(update_fields=['towers_blocked'])
 
-        xy_coordinates = insert_and_return_coordinates(
-            # self.city_grid.columns, self.city_grid.rows,
+        blocks = insert_and_return_coordinates(
             center_coordinates, self.tower.radius
-        )
-        blocks = Block.objects.filter(
-            column__in=[coord[0] for coord in xy_coordinates],
-            row__in=[coord[1] for coord in xy_coordinates]
         )
         for block in blocks:
             self.covered_blocks.add(block)
@@ -147,3 +197,8 @@ class TowerCoverage(models.Model):
 class BlockTowerCoverage(models.Model):
     towercoverage = models.ForeignKey(TowerCoverage, on_delete=models.CASCADE)
     block = models.ForeignKey(Block, on_delete=models.CASCADE)
+
+
+# class CityGridTower(models.Model):
+#     city_grid = models.ForeignKey(CityGrid, on_delete=models.CASCADE)
+#     tower = models.ForeignKey(Tower, on_delete=models.CASCADE)

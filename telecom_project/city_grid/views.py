@@ -1,9 +1,9 @@
+import matplotlib
 import matplotlib.pyplot as plt
 from django.http import HttpResponse
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.lines import Line2D
 from matplotlib.patches import Rectangle
-import matplotlib
 
 from .models import Block, CityGrid
 

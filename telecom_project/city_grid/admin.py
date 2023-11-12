@@ -30,12 +30,21 @@ class CityGridAdmin(admin.ModelAdmin):
     list_display_links = list_display
     search_fields = ['coverage_threshold']
     save_on_top = True
+    readonly_fields = ('towers',)
     CityGrid.show_visualization.short_description = 'Визуализация'
 
     def get_inlines(self, request, obj=None):
         if obj:
             return [TowerCoverageInLine]
         return []
+
+    def get_fields(self, request, obj=None):
+        fields = super().get_fields(request, obj)
+        if not obj:
+            fields.remove('towers')
+        elif obj:
+            fields.remove('auto_place_towers')
+        return fields
 
 
 @admin.register(Block)

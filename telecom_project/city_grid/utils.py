@@ -1,4 +1,5 @@
 def insert_and_return_coordinates(center_coordinates, offset):
+    from .models import Block
     center_x, center_y = center_coordinates
 
     matrix_size = offset * 2 + 1
@@ -15,4 +16,8 @@ def insert_and_return_coordinates(center_coordinates, offset):
 
             xy.append((target_x, target_y))
 
-    return xy
+    blocks = Block.objects.filter(
+            column__in=[coord[0] for coord in xy],
+            row__in=[coord[1] for coord in xy]
+        )
+    return blocks
