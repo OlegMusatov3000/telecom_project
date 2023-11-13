@@ -1,3 +1,15 @@
+"""
+This module defines the models used in the application.
+
+Models:
+- Block: Represents a block in the city grid.
+- Tower: Represents a communication tower with a specified radius.
+- TowerConnection: Represents a connection between two communication towers.
+- CityGrid: Represents the city grid containing blocks and towers.
+- TowerCoverage: Represents the coverage of a tower on the city grid.
+- BlockTowerCoverage: Represents the coverage of a block by a tower.
+"""
+
 import random
 
 from django.core.validators import MinValueValidator
@@ -87,8 +99,12 @@ class TowerConnection(models.Model):
         super(TowerConnection, self).save(*args, **kwargs)
         self.source_tower.block_for_tower.start_communication_unit = True
         self.target_tower.block_for_tower.end_communication_unit = True
-        self.source_tower.block_for_tower.save(update_fields=['start_communication_unit'])
-        self.target_tower.block_for_tower.save(update_fields=['end_communication_unit'])
+        self.source_tower.block_for_tower.save(
+            update_fields=['start_communication_unit']
+        )
+        self.target_tower.block_for_tower.save(
+            update_fields=['end_communication_unit']
+        )
 
 
 class CityGrid(models.Model):
@@ -112,14 +128,13 @@ class CityGrid(models.Model):
     )
     auto_place_towers = models.BooleanField(
         'Автоматическая расстановка вышек', default=False,
-        help_text='Установите флажок, если хотите, чтобы вышки расставлялись автоматически.'
+        help_text='''
+            Установите флажок, если хотите,
+            чтобы вышки расставлялись автоматически.
+        '''
     )
 
     def optimize_tower_placement(self):
-        """
-        Размещение минимального количества вышек так, чтобы все не загороженные блоки
-        находились в пределах действия хотя бы одной вышки, избегая краев сетки.
-        """
         # Получаем все свободные блоки в городской сетке
         free_blocks = Block.objects.filter(
             city_grid=self, blocked=False, towers_blocked=False,
@@ -128,7 +143,8 @@ class CityGrid(models.Model):
 
         # Пока есть свободные блоки, размещаем вышку
         while free_blocks.exists():
-            # Выбираем свободный блок с максимальным количеством непокрытых соседей
+            # Выбираем свободный блок с максимальным количеством
+            # непокрытых соседей
             target_block = free_blocks.annotate(
                 num_uncovered_neighbors=models.Count(
                     'city_grid__blocks',
@@ -143,16 +159,26 @@ class CityGrid(models.Model):
                 break  # Если не осталось свободных блоков, выходим из цикла
 
             # Проверяем, находится ли блок в краевой части сетки
-            is_edge_block = target_block.row == 1 or target_block.row == self.rows or target_block.column == 1 or target_block.column == self.columns
+            is_edge_block = target_block.row in {
+                1, self.rows
+            } or target_block.column in {1, self.columns}
 
-            # Если блок находится на краю, создаем новую вышку с необходимым радиусом
+            # Если блок находится на краю, создаем новую вышку
+            # с наименьшим радиусом
             if is_edge_block:
-                selected_tower_radius = random.choice([1, 2, 3])
-                selected_tower = Tower.objects.create(radius=selected_tower_radius, block_for_tower=target_block)
+                selected_tower = Tower.objects.create(
+                    radius=1, block_for_tower=target_block
+                )
             else:
-                # Выбираем вышку с максимальным отношением радиуса к количеству свободных соседей
-                selected_tower_radius = min(target_block.num_uncovered_neighbors, 3)  # Выбираем минимум между количеством свободных соседей и максимальным радиусом
-                selected_tower = Tower.objects.create(radius=selected_tower_radius, block_for_tower=target_block)
+                # Выбираем вышку с максимальным отношением радиуса
+                # к количеству свободных соседей
+                selected_tower_radius = max(
+                    1, min(target_block.num_uncovered_neighbors, 3)
+                )  # Выбираем минимум между количеством свободных соседей
+                # и максимальным радиусом
+                selected_tower = Tower.objects.create(
+                    radius=selected_tower_radius, block_for_tower=target_block
+                )
 
             TowerCoverage.objects.create(
                 tower=selected_tower,
@@ -160,10 +186,15 @@ class CityGrid(models.Model):
                 block_for_tower=target_block
             )
 
-            free_blocks = Block.objects.filter(city_grid=self, blocked=False, covered_with_a_tower=False)
+            free_blocks = Block.objects.filter(
+                city_grid=self, blocked=False, covered_with_a_tower=False
+            )
 
     def show_visualization(self):
-        return mark_safe(f'<a href="{reverse("visualize_city_grid", args=[self.pk])}" target="_blank">Показать визуализацию</a>')
+        return mark_safe(f'''
+        <a href="{reverse("visualize_city_grid", args=[self.pk])}" target=
+        "_blank">Показать визуализацию</a>
+        ''')
 
     def save(self, *args, **kwargs):
         if not self.pk:
@@ -172,7 +203,8 @@ class CityGrid(models.Model):
                 for column in range(1, self.columns + 1):
                     if random.randint(1, 100) < self.coverage_threshold:
                         Block.objects.create(
-                            city_grid=self, row=row, column=column, blocked=True
+                            city_grid=self, row=row,
+                            column=column, blocked=True
                         )
                     else:
                         Block.objects.create(
